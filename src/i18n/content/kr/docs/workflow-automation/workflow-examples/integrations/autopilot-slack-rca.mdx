@@ -7,40 +7,27 @@ tags:
   - slack
   - RCA
   - incident response
-metaDescription: Use Autopilot to run a root cause analysis on a New Relic alert and post findings to Slack. Includes the canonical selector pattern for handling Autopilot's variable finalAnswer response shape.
-freshnessValidatedDate: '2026-09-09T00:00:00.000Z'
+metaDescription: Use Autopilot to run a root cause analysis on a New Relic alert and post findings to Slack.
+freshnessValidatedDate: '2026-09-23T00:00:00.000Z'
 translationType: machine
 ---
 
-When an alert fires, trigger <DNT>[Autopilot](/docs/agentic-ai/autopilot/overview)</DNT> to run a root cause analysis and post the findings directly to a Slack channel. If Autopilot returns no usable response, the workflow sends an error notice instead so the team knows to investigate manually.
+이 템플릿은 뉴렐릭 공지에 대해 <DNT>[Autopilot](/docs/agentic-ai/autopilot/overview)</DNT>을(를) 실행하고 근본 원인 분석을 Slack 채널에 게시합니다. <DNT>Autopilot</DNT>이(가) 사용 가능한 응답을 반환하지 않는 경우, 워크플로우는 대신 오류 알림을 전송합니다. 공통 전제 조건 및 설정 참고 사항은 [Autopilot RCA 워크플로우 템플릿](/docs/workflow-automation/workflow-examples/integrations/autopilot-rca)을 참조하십시오.
 
 이 워크플로우를 사용하기 전에 다음 사항을 확인하십시오:
 
-* UUID 형식의 뉴렐릭 공지 문제 ID
 * 뉴렐릭에 구성된 Slack 대상 ― [대상 생성](/docs/workflow-automation/setup-and-configure/create-destinations)참조
 * 대상의 UUID 및 타겟 Slack 채널 이름
-
-<Callout variant="tip">
-  When triggering this workflow from <DNT>**Alert Workflows**</DNT>, use `{{ issueId }}` as the value for the `issueId` input. This variable automatically passes the triggering alert&apos;s issue ID to the workflow.
-</Callout>
 
 이 워크플로우는 다음 단계를 완료합니다:
 
 1. 공지를 확인하고 팀에 RCA가 진행 중임을 알리는 초기 Slack 메시지를 보냅니다
-2. Runs <DNT>Autopilot</DNT> with a root cause analysis prompt scoped to the alert issue ID
-3. Checks whether <DNT>Autopilot</DNT> returned a usable response
-4. If <DNT>Autopilot</DNT> succeeds, reformats the response as Slack Block Kit blocks and posts findings to Slack
-5. If <DNT>Autopilot</DNT> fails, posts an error message with the issue ID
+2. 공지 이슈 ID로 범위가 지정된 근본 원인 분석 프롬프트를 사용하여 <DNT>Autopilot</DNT>을(를) 실행합니다
+3. <DNT>Autopilot</DNT>이(가) 사용 가능한 응답을 반환했는지 확인합니다
+4. (<DNT>Autopilot</DNT>이(가) 응답을 반환하는 경우) 응답을 Slack Block Kit 블록으로 재구성하고 결과를 Slack에 게시합니다
+5. (<DNT>Autopilot</DNT>이(가) 응답을 반환하지 않는 경우) 이슈 ID와 함께 오류 메시지를 게시합니다.
 
-This workflow uses `newrelic.autopilot.run` and `newrelic.notification.sendSlack`.
-
-<Callout variant="important">
-  Selector `expression` values must be written on a single line. Multi-line YAML block scalars (`|` or `|-`) aren&apos;t evaluated for selector expressions and silently produce no output.
-</Callout>
-
-<Callout variant="tip">
-  Autopilot&apos;s `finalAnswer` field can return as either a plain string or a JSON-encoded object depending on prompt context. The `analysisText` selector in this workflow handles both shapes automatically.
-</Callout>
+이 워크플로우는 `newrelic.autopilot.run` 및 `newrelic.notification.sendSlack`을(를) 사용합니다.
 
 ```yaml
 name: autopilotSlackRCA
@@ -132,16 +119,20 @@ steps:
 
 ## 작동 원리 [#how-it-works]
 
-The `runAutopilot` step uses two selectors to handle `finalAnswer` shape variability at the data-extraction layer:
+`runAutopilot` 단계는 데이터 추출 계층에서 `finalAnswer` 형태 가변성을 처리하기 위해 두 개의 선택기를 사용합니다:
 
-* **`analysisRaw`** captures the raw `finalAnswer` value. The `checkAgentResponse` step uses this to determine whether <DNT>Autopilot</DNT> returned anything.
-* **`analysisText`** normalizes the value — if `finalAnswer` is a JSON-encoded string, it parses it first, then extracts text content from `.card.body`. The `buildSlackBlocks` step uses `analysisText` directly, which keeps the formatting logic simple.
+* **`analysisRaw`**은(는) 원시 `finalAnswer` 값을 캡처합니다. `checkAgentResponse` 단계에서는 이를 사용하여 <DNT>Autopilot</DNT>이(가) 무언가를 반환했는지 확인합니다.
+* **`analysisText`**은(는) 값을 정규화합니다 ― `finalAnswer`이(가) JSON으로 인코딩된 문자열인 경우 먼저 이를 파싱한 다음 `.card.body`에서 텍스트 콘텐츠를 추출합니다. `buildSlackBlocks` 단계는 추가 파싱 없이 `analysisText`을(를) 직접 사용합니다.
 
-`buildSlackBlocks` converts `**bold**` and `###`/`##` heading markers to Slack mrkdwn format, splits the result on newlines, and wraps each non-empty line in a Block Kit `section` block.
+`buildSlackBlocks` `**bold**` 및 `###`/`##` 제목 마커를 Slack mrkdwn 형식으로 변환하고, 결과를 줄 바꿈으로 분할하며, 비어 있지 않은 각 줄을 Block Kit `section` 블록으로 감쌉니다.
 
 ## 관련 주제 [#related-topics]
 
 <DocTiles>
+  <DocTile title="Autopilot RCA 워크플로우 템플릿" path="/docs/workflow-automation/workflow-examples/integrations/autopilot-rca">
+    모든 Autopilot RCA 템플릿에 대한 공통 전제 조건 및 설정 참고 사항
+  </DocTile>
+
   <DocTile title="오토파일럿 개요" path="/docs/agentic-ai/autopilot/overview">
     Autopilot이 알림 및 인시던트를 조사하는 방법을 알아보십시오.
   </DocTile>
@@ -150,7 +141,7 @@ The `runAutopilot` step uses two selectors to handle `finalAnswer` shape variabi
     성공 또는 실패 시 분기하기 위해 switch 문 사용
   </DocTile>
 
-  <DocTile title="Slack 공지 보내기" path="/docs/workflow-automation/setup-and-configure/actions-catalog/newrelic/newrelic-notification#newrelic.notification.sendSlack">
+  <DocTile title="Slack 공지 보내기" path="/docs/workflow-automation/setup-and-configure/actions-catalog/newrelic/notification/newrelic-notification#newrelic.notification.sendSlack">
     sendSlack 작업에 대한 전체 참조
   </DocTile>
 
@@ -158,7 +149,11 @@ The `runAutopilot` step uses two selectors to handle `finalAnswer` shape variabi
     이 워크플로우에 필요한 Slack 대상을 구성하십시오.
   </DocTile>
 
+  <DocTile title="Autopilot 및 이메일을 사용한 공지 RCA" path="/docs/workflow-automation/workflow-examples/integrations/autopilot-email-rca">
+    Slack 대신 이메일로 RCA 결과를 전송하십시오.
+  </DocTile>
+
   <DocTile title="흐름 흐름 자동화 문제 해결" path="/docs/workflow-automation/troubleshooting">
-    Solutions for common Autopilot and Slack integration issues
+    일반적인 Autopilot 및 Slack 통합 문제에 대한 해결 방법
   </DocTile>
 </DocTiles>

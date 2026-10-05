@@ -333,3 +333,196 @@ translationType: machine
       </InlineCode> 속성이 존재하는지 확인합니다.
   </Collapser>
 </CollapserGroup>
+
+## APM 상관관계 및 분산 추적 [#correlation-troubleshooting]
+
+이 문제는 [분산 추적을 통한 APM 상관관계](/docs/opentelemetry/integrations/elasticsearch/distributed-tracing)를 설정한 경우에 적용됩니다.
+
+<CollapserGroup>
+  <Collapser id="troubleshoot-no-es-spans" title="뉴렐릭에 Elasticsearch 스팬이 나타나지 않습니다.">
+    <strong>확인 방법</strong>
+
+    ```sql
+    FROM Span SELECT count(*) WHERE es.cluster.name = '<elasticsearch-cluster-name>' SINCE 30 minutes ago
+    ```
+
+    <strong>해결</strong>
+
+    * 네이티브 OTLP 트레이스 내보내기에는 <strong>Elasticsearch 9.4 이상</strong>이 필요합니다.
+      <InlineCode>
+        curl http://localhost:9200
+      </InlineCode>
+      을(를) 사용하여 버전을 확인하십시오.
+    * <InlineCode>
+        elasticsearch.yml
+      </InlineCode>
+      에 세 가지 설정이 모두 있는지 확인하십시오:
+      <InlineCode>
+        telemetry.tracing.enabled: true
+      </InlineCode>
+      ,
+      <InlineCode>
+        telemetry.export.endpoint
+      </InlineCode>
+      및
+      <InlineCode>
+        telemetry.tracing.sample_rate
+      </InlineCode>
+      .
+    * JVM 시스템 속성
+      <InlineCode>
+        -Dtelemetry.otel.traces.enabled=true
+      </InlineCode>
+      이(가) 설정되어 있는지(
+      <InlineCode>
+        jvm.options
+      </InlineCode>
+      또는
+      <InlineCode>
+        ES_JAVA_OPTS
+      </InlineCode>
+      에서) 확인한 다음 Elasticsearch를 다시 시작하십시오.
+    * 기본
+      <InlineCode>
+        telemetry.tracing.sample_rate
+      </InlineCode>
+      은(는)
+      <InlineCode>
+        0.001
+      </InlineCode>
+      (0.1%)입니다. 스팬이 빠르게 나타나도록 유효성을 검사하는 동안 이 값을 높이십시오.
+  </Collapser>
+
+  <Collapser id="troubleshoot-traces-pipeline" title="Elasticsearch가 스팬을 내보내고 있지만 뉴렐릭에 전혀 도달하지 않습니다.">
+    <strong>해결</strong>
+
+    * 수집기에
+      <InlineCode>
+        0.0.0.0:4317
+      </InlineCode>
+      에서 gRPC 프로토콜이 활성화된
+      <InlineCode>
+        otlp
+      </InlineCode>
+      수신기가 있는지, 그리고 Elasticsearch 노드에서 엔드포인트에 연결할 수 있는지 확인하십시오.
+    * <InlineCode>
+        traces
+      </InlineCode>
+      파이프라인이 존재하고
+      <InlineCode>
+        otlp
+      </InlineCode>
+      수신기와
+      <InlineCode>
+        otlphttp
+      </InlineCode>
+      익스포터가 포함되어 있는지 확인하십시오.
+    * 수집기 로그에서 OTLP 수신기 또는 내보내기 오류를 확인하십시오.
+  </Collapser>
+
+  <Collapser id="troubleshoot-cluster-self-loop" title="클러스터가 자신과의 관계를 표시합니다(자신을 호출함)">
+    <strong>원인</strong>
+
+    호출하는 애플리케이션의 속성으로 지정할 수 없는 Elasticsearch 스팬이 뉴렐릭에 도달하면 자체 루프가 나타납니다. 흔히 발생하는 두 가지 소스는 다음과 같습니다:
+
+    * <strong>상위가 없는(루트) Elasticsearch 스팬</strong> — Kubernetes 상태 프로브 또는 Elasticsearch 메트릭 수신기의 자체 스크랩 호출(
+      <InlineCode>
+        \_nodes/stats
+      </InlineCode>
+      ,
+      <InlineCode>
+        \_cluster/health
+      </InlineCode>
+      및 유사 항목)과 같이 상위 애플리케이션 스팬이 없는 스팬입니다. 애플리케이션 트레이스의 일부가 아니기 때문에 뉴렐릭에는 호출 서비스가 없으며 클러스터 자체에 관계를 그립니다.
+    * <strong>노드 자체 주소</strong> — Elasticsearch 서버 스팬은
+      <InlineCode>
+        http.request.headers.host
+      </InlineCode>
+      (및
+      <InlineCode>
+        server.address
+      </InlineCode>
+      )을 전달하며, 뉴렐릭은 이를 클러스터로 다시 해석합니다.
+
+    <strong>해결</strong>
+
+    두 프로세서를 모두 <InlineCode>
+      traces
+    </InlineCode> 파이프라인에 추가한 다음 수집기를 다시 시작하십시오. <InlineCode>
+      filter/drop\_rootless\_es
+    </InlineCode>은(는) 상위가 없는 Elasticsearch 스팬을 삭제하고(애플리케이션 기반 스팬에는 항상 상위가 있으므로 유지됨), <InlineCode>
+      transform/strip\_es\_host
+    </InlineCode>은(는) 주소 속성을 제거합니다:
+
+    ```yaml
+    processors:
+      filter/drop_rootless_es:
+        error_mode: ignore
+        traces:
+          span:
+            - 'instrumentation_scope.name == "elasticsearch" and IsRootSpan()'
+      transform/strip_es_host:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - delete_key(attributes, "http.request.headers.host") where instrumentation_scope.name == "elasticsearch"
+              - delete_key(attributes, "server.address") where instrumentation_scope.name == "elasticsearch"
+    # traces pipeline: processors: [filter/drop_rootless_es, transform/strip_es_host, batch]
+    ```
+
+    수정된 스팬이 도착하고 이전 관계가 만료되면 기존 자체 루프가 저절로 지워집니다(최대 약 75분이 소요될 수 있습니다).
+  </Collapser>
+
+  <Collapser id="troubleshoot-app-not-linked" title="Elasticsearch 스팬이 도착하지만 애플리케이션이 클러스터에 연결되지 않습니다">
+    <strong>해결</strong>
+
+    * 애플리케이션이 계측되고 Elasticsearch 호출 시 W3C
+      <InlineCode>
+        traceparent
+      </InlineCode>
+      헤더를 전파하는지 확인하십시오. 대부분의 최신 Elasticsearch 클라이언트는 애플리케이션이 OpenTelemetry로 계측된 경우 이 작업을 자동으로 수행합니다.
+    * Elasticsearch 호출이 포함된 분산 트레이스를 열고 애플리케이션 스팬과 Elasticsearch 스팬이 동일한 트레이스를 공유하는지 확인하십시오.
+    * 관계가 형성될 때까지 몇 분 정도 기다려 주십시오. 뉴렐릭은 주기적으로 엔티티 관계를 재평가합니다.
+  </Collapser>
+
+  <Collapser id="troubleshoot-name-mismatch" title="트레이스와 메트릭은 서로 다른 클러스터 엔티티로 확인됩니다">
+    <strong>해결</strong>
+
+    * 트레이스 경로는
+      <InlineCode>
+        es.cluster.name
+      </InlineCode>
+      (Elasticsearch가 스팬에 스탬프를 찍음)을 키로 사용하고 메트릭 경로는
+      <InlineCode>
+        elasticsearch.cluster.name
+      </InlineCode>
+      을 키로 사용합니다.
+      <InlineCode>
+        elasticsearchreceiver
+      </InlineCode>
+      은(는) Elasticsearch가 반환하는 값에서 자동으로
+      <InlineCode>
+        elasticsearch.cluster.name
+      </InlineCode>
+      을(를) 보고하므로, 둘 다 동일한
+      <InlineCode>
+        cluster.name
+      </InlineCode>
+      에서 파생되고 하나의 엔티티로 확인됩니다 — 추가 수집기 설정이 필요하지 않습니다.
+    * 메트릭 클러스터 이름을 고정된 값으로 강제하지 마십시오. 수집기 구성에서
+      <InlineCode>
+        resource
+      </InlineCode>
+      프로세서(예: 이름을 하드코딩하는
+      <InlineCode>
+        resource/cluster_name_override
+      </InlineCode>
+      )로 이를 설정하는 경우 해당 재정의를 제거하십시오 — 그렇지 않으면 메트릭과 트레이스가 서로 다른 두 엔티티로 확인되고 상관된 엔티티에 메트릭 데이터가 표시되지 않습니다.
+    * 단일하고 명확한 엔티티에 매핑되도록 뉴렐릭 계정 내에서 Elasticsearch
+      <InlineCode>
+        cluster.name
+      </InlineCode>
+      이(가) 고유한지 확인하십시오.
+  </Collapser>
+</CollapserGroup>

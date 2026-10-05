@@ -24,26 +24,26 @@ Para ver esse recurso em ação, consulte o [exemplo de caso de uso](#example-us
 Requisitos para usar este recurso:
 
 * Deve usar um [dashboard New Relic](/docs/dashboards/new-relic-one-dashboards/get-started/introduction-new-relic-one-dashboards). Não funcionará em gráfico independente no [criador de consulta](/docs/chart-builder/use-chart-builder/get-started/introduction-chart-builder).
-
 * A consulta NRQL deve conter uma [cláusula`FACET` ](/docs/query-data/nrql-new-relic-query-language/getting-started/nrql-syntax-components-functions#sel-facet).
-
 * Disponível apenas para [gráficos de barras](/docs/insights/use-insights-ui/manage-dashboards/chart-types#widget-barchart), [mapas de calor](/docs/insights/use-insights-ui/manage-dashboards/chart-types#widget-heatmap), [gráficos de pizza](/docs/insights/use-insights-ui/manage-dashboards/chart-types#widget-piechart) e [tabelas](/docs/insights/use-insights-ui/manage-dashboards/chart-types#widget-table).
 
-* You can use a variable `{{selfEntity}}` to keep facet linking tied to the current dashboard, even when you duplicate it. To enable this functionality in the UI:
+## Mantenha os links de faceta vinculados ao dashboard atual [#selfentity]
 
-  * For existing dashboards: Disable facet linking in the widget used for filtering and apply the changes. Enable facet linking again in the same widget and apply the changes. This will replace the dashboard GUID with the `{{selfEntity}}` variables.
+Por padrão, a vinculação de faceta que filtra o dashboard atual armazena o GUID desse dashboard. Se você duplicar o dashboard, os links de faceta da cópia ainda apontarão para o original, não para a duplicata. Você pode usar a variável `{{selfEntity}}` em vez disso, para que a vinculação de faceta sempre seja resolvida para o dashboard em que o widget está, incluindo quaisquer duplicatas.
 
-  * For new dashboards: It will use the `{{selfEntity}}` variable automatically when you enable facet linking.
+* Para dashboards existentes: desative a vinculação de facetas no widget usado para filtragem e aplique as alterações. Ative a vinculação de facetas novamente no mesmo widget e aplique as alterações. Isso substituirá o GUID do dashboard pela variável `{{selfEntity}}`.
 
-  * For terraform/json dashboards:
+* Para novos dashboards: ele usará a variável `{{selfEntity}}` automaticamente quando você habilitar a vinculação de facetas.
 
-    * For existing dashboards: Remove the hardcoded linkedEntityGuids at widget level and replace it with `{{selfEntity}}` in the raw configuration.
-    * For new dashboards: Add this line in the raw configuration of the widget you want to facet by:
+* Para dashboards de Terraform ou JSON:
+
+  * Para dashboards existentes: remova o `linkedEntityGuids` codificado no nível do widget e substitua-o por `{{selfEntity}}` na configuração bruta.
+  * Para novos dashboards: adicione esta linha na configuração bruta do widget pelo qual deseja facetar:
 
   ```json
-                      "linkedEntityGuids": [
-                          "{{selfEntity}}"
-                      ],
+  "linkedEntityGuids": [
+      "{{selfEntity}}"
+  ],
   ```
 
 ## Exemplo de uso de filtragem de facetas [#example-use]
